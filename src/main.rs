@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::str;
 use std::str::FromStr;
+use std::iter::Peekable;
 
 #[derive(Debug)]
 struct SvnRepo {
@@ -121,19 +122,70 @@ impl SvnRepo {
             .output()
             .expect("svnlook");
 
-        n.stdout
-            .split(|b| *b == b'\n')
-            .filter(|str| str.len() > 4)
-            .map(|str| str.split_at(4))
-            .map(|(change, path)| SvnChange {
+        let mut lines = n.stdout.split(|&b| b == b'\n').filter(|s| s.len() > 4).peekable();
+        let mut changes = vec![];
+
+        while let Some(line) = lines.next() {
+            let (change, path) = line.split_at(4);
+            let mut change = SvnChange {
                 path: PathBuf::from(OsStr::from_bytes(path)),
                 status: SvnStatus::from_str(str::from_utf8(change).unwrap()).unwrap(),
                 old_path: None,
                 old_revision: None,
                 additions: None,
                 deletions: None,
-            })
-            .collect::<Vec<SvnChange>>()
+            };
+
+            if let Some(ref line) = lines.peek() {
+                if line.starts_with(b"    (from ") {
+                    let line = &line[10..line.len()-1];
+                    if let Some(sp) = line.iter().rposition(|&b| b == b':') {
+                        let (path, revision) = line.split_at(sp);
+                        // println!("{:?}, {:?}", str::from_utf8(path), str::from_utf8(revision));
+
+                        if revision.len() > 2 {
+                            change.old_path = Some(PathBuf::from(OsStr::from_bytes(path)));
+                            change.old_revision = Some(u32::from_str(str::from_utf8(&revision[2..]).unwrap()).unwrap());
+                        }
+                    }
+                    lines.next();
+                }
+            }
+            changes.push(change);
+        }
+
+        changes
+
+        // for c in changes {
+
+        // }
+
+        // for (path, change) in n.stdout
+        //     .split(|b| *b == b'\n')
+        //     .filter(|s| s.len() > 4)
+        //     .peekable() {
+        //     let mut change = SvnChange {
+        //         path: PathBuf::from(OsStr::from_bytes(path)),
+        //         status: SvnStatus::from_str(str::from_utf8(change).unwrap()).unwrap(),
+        //         old_path: None,
+        //         old_revision: None,
+        //         additions: None,
+        //         deletions: None,
+        //     });
+
+        //     if 
+        // }
+
+        //     .map(|str| str.split_at(4))
+        //     .map(|(change, path)| SvnChange {
+        //         path: PathBuf::from(OsStr::from_bytes(path)),
+        //         status: SvnStatus::from_str(str::from_utf8(change).unwrap()).unwrap(),
+        //         old_path: None,
+        //         old_revision: None,
+        //         additions: None,
+        //         deletions: None,
+        //     })
+        //     .collect::<Vec<SvnChange>>()
     }
 
     // io::Read?
