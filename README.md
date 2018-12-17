@@ -1,7 +1,7 @@
 # rust-svnlook
 
 A Rust crate for extracting information from Subversion repositories via the
-+svnlook+ command.
+`svnlook` command.
 
 ## Synopsis
 
