@@ -2,14 +2,18 @@ extern crate chrono;
 use chrono::prelude::*;
 use chrono::DateTime;
 
+extern crate rayon;
+use rayon::prelude::*;
+
+
 use std::ffi::OsStr;
-use std::iter::Peekable;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::str;
 use std::str::FromStr;
+use std::fmt;
 
 #[derive(Debug)]
 struct SvnRepo {
@@ -30,23 +34,36 @@ enum SvnStatus {
     Copied,
     Deleted,
     Updated,
-    PropChange,
-    Other,
+    PropChange
 }
 
-impl FromStr for SvnStatus {
-    type Err = ();
+impl SvnStatus {
+    fn from_bytes(s: &[u8]) -> Result<Self, ()> {
+        if s.len() < 3 {
+            return Err(())
+        }
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
-            "A   " => SvnStatus::Added,
-            "A + " => SvnStatus::Copied,
-            "D   " => SvnStatus::Deleted,
-            "U   " => SvnStatus::Updated,
-            "_U  " => SvnStatus::PropChange,
-            "UU  " => SvnStatus::Updated,
-            _ => SvnStatus::Other,
+        Ok(match &s[0..3] {
+            b"A  " => SvnStatus::Added,
+            b"A +" => SvnStatus::Copied,
+            b"D  " => SvnStatus::Deleted,
+            b"U  " => SvnStatus::Updated,
+            b"_U " => SvnStatus::PropChange,
+            b"UU " => SvnStatus::Updated,
+            _ => return Err(()),
         })
+    }
+}
+
+impl fmt::Display for SvnStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SvnStatus::Added => write!(f, "Added"),
+            SvnStatus::Copied => write!(f, "Copied"),
+            SvnStatus::Deleted => write!(f, "Deleted"),
+            SvnStatus::Updated => write!(f, "Updated"),
+            SvnStatus::PropChange => write!(f, "PropChange"),
+        }
     }
 }
 
@@ -77,18 +94,18 @@ impl SvnRepo {
         }
     }
 
-    fn youngest(&self) -> u32 {
+    fn youngest(&self) -> Result<u32, ()> {
         let n = Command::new("svnlook")
             .arg("youngest")
             .arg(&self.path)
             .output()
-            .expect("svnlook");
+            .map_err(|_| ())?;
 
         str::from_utf8(&n.stdout[..])
             .expect("utf8")
             .trim()
             .parse()
-            .expect("number")
+            .map_err(|_| ())
     }
 
     fn info(&self, revision: u32) -> Result<SvnInfo, ()> {
@@ -133,7 +150,7 @@ impl SvnRepo {
     }
 
     // iterator?
-    fn changed(&self, revision: u32) -> Vec<SvnChange> {
+    fn changed(&self, revision: u32) -> Result<Vec<SvnChange>, ()> {
         let n = Command::new("svnlook")
             .arg("--copy-info")
             .arg("changed")
@@ -141,53 +158,47 @@ impl SvnRepo {
             .arg(revision.to_string())
             .arg(&self.path)
             .output()
-            .expect("svnlook");
+            .map_err(|_| ())?;
 
+        let mut changes = vec![];
         let mut lines = n
             .stdout
             .split(|&b| b == b'\n')
-            .filter(|s| s.len() > 4)
-            .peekable();
-        let mut changes = vec![];
+            .filter(|s| s.len() > 4);
 
         while let Some(line) = lines.next() {
             let (change, path) = line.split_at(4);
             let mut change = SvnChange {
                 path: PathBuf::from(OsStr::from_bytes(path)),
-                status: str::from_utf8(change)
-                    .ok()
-                    .and_then(|s| SvnStatus::from_str(s).ok())
-                    .unwrap_or(SvnStatus::Other),
+                status: SvnStatus::from_bytes(change)?,
                 from: None,
                 delta: None,
             };
 
-            change.from = lines
-                .peek()
-                .filter(|line| line.starts_with(b"    (from ") && line.ends_with(b")"))
-                .map(|line| &line[10..line.len() - 1])
-                .and_then(|line| {
-                    line.iter()
-                        .rposition(|&b| b == b':')
-                        .map(|pos| line.split_at(pos))
-                })
-                .filter(|(_path, revision)| revision.len() > 2)
-                .map(|(path, revision)| SvnFrom {
-                    path: PathBuf::from(OsStr::from_bytes(path)),
-                    revision: str::from_utf8(&revision[2..])
-                        .ok()
-                        .and_then(|s| u32::from_str(s).ok())
-                        .unwrap_or(0),
-                });
-
-            if change.from.is_some() {
-                lines.next();
+            if let SvnStatus::Copied = change.status {
+                change.from = lines
+                    .next()
+                    .filter(|line| line.starts_with(b"    (from ") && line.ends_with(b")"))
+                    .map(|line| &line[10..line.len() - 1])
+                    .and_then(|line| {
+                        line.iter()
+                            .rposition(|&b| b == b':')
+                            .map(|pos| line.split_at(pos))
+                    })
+                    .filter(|(_path, revision)| revision.len() > 2)
+                    .map(|(path, revision)| SvnFrom {
+                        path: PathBuf::from(OsStr::from_bytes(path)),
+                        revision: str::from_utf8(&revision[2..])
+                            .ok()
+                            .and_then(|s| u32::from_str(s).ok())
+                            .unwrap_or(0),
+                    });
             }
 
             changes.push(change);
         }
 
-        changes
+        Ok(changes)
     }
 
     // io::Read?
@@ -207,11 +218,26 @@ impl SvnRepo {
 fn main() {
     let repo = SvnRepo::new("/repos/freebsd");
 
-    let latest = repo.youngest();
+    let latest = repo.youngest().expect("latest");
 
-    // for rev in (latest-100)..latest {
-    for rev in 1..latest {
-        println!("{:?}", repo.info(rev));
-        println!("{:?}", repo.changed(rev));
+    // (1..latest).into_par_iter().for_each(|rev| {
+    //     println!("{:?}", repo.info(rev));
+    //     println!("{:?}", repo.changed(rev));
+    // })
+
+    for rev in 1000..latest {
+        let info = repo.info(rev).expect("info");
+        let changed = repo.changed(rev).expect("changed");
+
+        println!("Revision r{}, by {} at {}", info.revision, info.committer, info.date);
+        for change in changed {
+            print!("   {:.8}: ", change.status);
+
+            if let Some(from) = change.from {
+                println!("{}@r{} -> {}", from.path.display(), from.revision, change.path.display());
+            } else {
+                println!("{}", change.path.display());
+            }
+        }
     }
 }
