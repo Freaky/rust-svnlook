@@ -51,13 +51,23 @@ impl FromStr for SvnStatus {
 }
 
 #[derive(Debug)]
+struct Delta {
+    additions: u32,
+    deletions: u32
+}
+
+#[derive(Debug)]
+struct SvnFrom {
+    path: PathBuf,
+    revision: u32
+}
+
+#[derive(Debug)]
 struct SvnChange {
     path: PathBuf,
     status: SvnStatus,
-    old_path: Option<PathBuf>,
-    old_revision: Option<u32>,
-    additions: Option<u32>,
-    deletions: Option<u32>,
+    from: Option<SvnFrom>,
+    delta: Option<Delta>
 }
 
 impl SvnRepo {
@@ -137,10 +147,8 @@ impl SvnRepo {
                     .ok()
                     .and_then(|s| SvnStatus::from_str(s).ok())
                     .unwrap_or(SvnStatus::Other),
-                old_path: None,
-                old_revision: None,
-                additions: None,
-                deletions: None,
+                from: None,
+                delta: None
             };
 
             if let Some(ref line) = lines.peek() {
@@ -151,10 +159,13 @@ impl SvnRepo {
                         .map(|pos| line.split_at(pos))
                         .filter(|(_path, revision)| revision.len() > 2)
                         .map(|(path, revision)| {
-                            change.old_path = Some(PathBuf::from(OsStr::from_bytes(path)));
-                            change.old_revision = str::from_utf8(&revision[2..])
+                            change.from = Some(SvnFrom {
+                                path: PathBuf::from(OsStr::from_bytes(path)),
+                                revision: str::from_utf8(&revision[2..])
                                 .ok()
                                 .and_then(|s| u32::from_str(s).ok())
+                                .unwrap_or(0)
+                            });
                         });
                     lines.next();
                 }
