@@ -1,16 +1,15 @@
-
 extern crate chrono;
 use chrono::prelude::*;
 use chrono::DateTime;
 
 use std::ffi::OsStr;
+use std::fmt;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::str;
 use std::str::FromStr;
-use std::fmt;
 
 #[derive(Debug)]
 pub struct SvnRepo {
@@ -31,13 +30,13 @@ pub enum SvnStatus {
     Copied,
     Deleted,
     Updated,
-    PropChange
+    PropChange,
 }
 
 impl SvnStatus {
     fn from_bytes(s: &[u8]) -> Result<Self, ()> {
         if s.len() < 3 {
-            return Err(())
+            return Err(());
         }
 
         Ok(match &s[0..3] {
@@ -54,13 +53,17 @@ impl SvnStatus {
 
 impl fmt::Display for SvnStatus {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SvnStatus::Added => write!(f, "Added"),
-            SvnStatus::Copied => write!(f, "Copied"),
-            SvnStatus::Deleted => write!(f, "Deleted"),
-            SvnStatus::Updated => write!(f, "Updated"),
-            SvnStatus::PropChange => write!(f, "PropChange"),
-        }
+        write!(
+            f,
+            "{}",
+            match self {
+                SvnStatus::Added => "Added",
+                SvnStatus::Copied => "Copied",
+                SvnStatus::Deleted => "Deleted",
+                SvnStatus::Updated => "Updated",
+                SvnStatus::PropChange => "PropChange",
+            }
+        )
     }
 }
 
@@ -136,14 +139,13 @@ impl SvnRepo {
             .filter(|m| m.len() > bytes)
             .map(|m| &m[0..bytes])
             .map(String::from_utf8_lossy)
-            .map(|msg|
-                SvnInfo {
-                    revision,
-                    committer: committer.to_string(),
-                    date,
-                    message: msg.to_string(),
-                }
-            ).ok_or(())
+            .map(|msg| SvnInfo {
+                revision,
+                committer: committer.to_string(),
+                date,
+                message: msg.to_string(),
+            })
+            .ok_or(())
     }
 
     // iterator?
@@ -158,10 +160,7 @@ impl SvnRepo {
             .map_err(|_| ())?;
 
         let mut changes = vec![];
-        let mut lines = n
-            .stdout
-            .split(|&b| b == b'\n')
-            .filter(|s| s.len() > 4);
+        let mut lines = n.stdout.split(|&b| b == b'\n').filter(|s| s.len() > 4);
 
         while let Some(line) = lines.next() {
             let (change, path) = line.split_at(4);
@@ -222,7 +221,12 @@ impl SvnRepo {
     }
 
     // io::Read?
-    pub fn cat<R: AsRef<Path>>(&self, revision: u32, filename: R, limit: Option<usize>) -> Result<Vec<u8>, ()> {
+    pub fn cat<R: AsRef<Path>>(
+        &self,
+        revision: u32,
+        filename: R,
+        limit: Option<usize>,
+    ) -> Result<Vec<u8>, ()> {
         let n = Command::new("svnlook")
             .arg("cat")
             .arg("-r")
