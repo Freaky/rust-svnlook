@@ -53,13 +53,13 @@ impl FromStr for SvnStatus {
 #[derive(Debug)]
 struct Delta {
     additions: u32,
-    deletions: u32
+    deletions: u32,
 }
 
 #[derive(Debug)]
 struct SvnFrom {
     path: PathBuf,
-    revision: u32
+    revision: u32,
 }
 
 #[derive(Debug)]
@@ -67,7 +67,7 @@ struct SvnChange {
     path: PathBuf,
     status: SvnStatus,
     from: Option<SvnFrom>,
-    delta: Option<Delta>
+    delta: Option<Delta>,
 }
 
 impl SvnRepo {
@@ -148,28 +148,31 @@ impl SvnRepo {
                     .and_then(|s| SvnStatus::from_str(s).ok())
                     .unwrap_or(SvnStatus::Other),
                 from: None,
-                delta: None
+                delta: None,
             };
 
-            if let Some(ref line) = lines.peek() {
-                if line.starts_with(b"    (from ") && line.ends_with(b")") {
-                    let line = &line[10..line.len() - 1];
+            change.from = lines
+                .peek()
+                .filter(|line| line.starts_with(b"    (from ") && line.ends_with(b")"))
+                .map(|line| &line[10..line.len() - 1])
+                .and_then(|line| {
                     line.iter()
                         .rposition(|&b| b == b':')
                         .map(|pos| line.split_at(pos))
-                        .filter(|(_path, revision)| revision.len() > 2)
-                        .map(|(path, revision)| {
-                            change.from = Some(SvnFrom {
-                                path: PathBuf::from(OsStr::from_bytes(path)),
-                                revision: str::from_utf8(&revision[2..])
-                                .ok()
-                                .and_then(|s| u32::from_str(s).ok())
-                                .unwrap_or(0)
-                            });
-                        });
-                    lines.next();
-                }
+                })
+                .filter(|(_path, revision)| revision.len() > 2)
+                .map(|(path, revision)| SvnFrom {
+                    path: PathBuf::from(OsStr::from_bytes(path)),
+                    revision: str::from_utf8(&revision[2..])
+                        .ok()
+                        .and_then(|s| u32::from_str(s).ok())
+                        .unwrap_or(0),
+                });
+
+            if change.from.is_some() {
+                lines.next();
             }
+
             changes.push(change);
         }
 
