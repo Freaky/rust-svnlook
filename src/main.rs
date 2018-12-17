@@ -133,7 +133,10 @@ impl SvnRepo {
             let (change, path) = line.split_at(4);
             let mut change = SvnChange {
                 path: PathBuf::from(OsStr::from_bytes(path)),
-                status: SvnStatus::from_str(str::from_utf8(change).unwrap()).unwrap(),
+                status: str::from_utf8(change)
+                    .ok()
+                    .and_then(|s| SvnStatus::from_str(s).ok())
+                    .unwrap_or(SvnStatus::Other),
                 old_path: None,
                 old_revision: None,
                 additions: None,
@@ -141,8 +144,8 @@ impl SvnRepo {
             };
 
             if let Some(ref line) = lines.peek() {
-                if line.starts_with(b"    (from ") {
-                    let line = &line[10..line.len() - 1]; // slice off the "    (from ...)"
+                if line.starts_with(b"    (from ") && line.ends_with(b")") {
+                    let line = &line[10..line.len() - 1];
                     line.iter()
                         .rposition(|&b| b == b':')
                         .map(|pos| line.split_at(pos))
