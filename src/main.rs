@@ -5,7 +5,6 @@ use chrono::DateTime;
 extern crate rayon;
 use rayon::prelude::*;
 
-
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
