@@ -202,13 +202,40 @@ impl SvnRepo {
     }
 
     // io::Read?
-    fn diff<R: AsRef<Path>>(&self, revision: u32, filename: Option<R>) -> String {
-        unimplemented!()
+    //
+    // {Added,Modified,Deleted}: <filename>
+    // ===================================================================
+    // --- old_filename (rev \d+)
+    // +++ new_filename yyyy-mm-dd hh:mm:ss UTC (rev \d+)
+    //  <diff>
+    //
+    // {Added,Modified,Deleted}: <next_filename>
+    fn diff<R: AsRef<Path>>(&self, revision: u32, filename: Option<R>) -> Result<Vec<u8>, ()> {
+        let n = Command::new("svnlook")
+            .arg("--ignore-properties")
+            .arg("--diff-copy-from")
+            .arg("diff")
+            .arg("-r")
+            .arg(revision.to_string())
+            .arg(&self.path)
+            .output()
+            .map_err(|_| ())?;
+
+        Ok(n.stdout)
     }
 
     // io::Read?
-    fn cat(&self, revision: u32, filename: PathBuf, limit: Option<usize>) -> String {
-        unimplemented!()
+    fn cat<R: AsRef<Path>>(&self, revision: u32, filename: R, limit: Option<usize>) -> Result<Vec<u8>, ()> {
+        let n = Command::new("svnlook")
+            .arg("cat")
+            .arg("-r")
+            .arg(revision.to_string())
+            .arg(&self.path)
+            .arg(filename.as_ref().as_os_str())
+            .output()
+            .map_err(|_| ())?;
+
+        Ok(n.stdout)
     }
 
     // iterator?
