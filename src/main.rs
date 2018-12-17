@@ -18,10 +18,10 @@ fn main() {
             print!("   {:.8}: ", change.status);
 
             if let Some(from) = change.from {
-                println!("{}@r{} -> {}", from.path.display(), from.revision, change.path.display());
-            } else {
-                println!("{}", change.path.display());
+                print!("{}@r{} -> ", from.path.display(), from.revision);
             }
+
+            println!("{}", change.path.display());
         }
     }
 }
