@@ -149,9 +149,9 @@ impl SvnRepo {
                         .filter(|(_path, revision)| revision.len() > 2)
                         .map(|(path, revision)| {
                             change.old_path = Some(PathBuf::from(OsStr::from_bytes(path)));
-                            change.old_revision = Some(
-                                u32::from_str(str::from_utf8(&revision[2..]).unwrap()).unwrap(),
-                            );
+                            change.old_revision = str::from_utf8(&revision[2..])
+                                .ok()
+                                .and_then(|s| u32::from_str(s).ok())
                         });
                     lines.next();
                 }
