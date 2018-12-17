@@ -91,34 +91,45 @@ impl SvnRepo {
             .expect("number")
     }
 
-    fn info(&self, revision: u32) -> SvnInfo {
+    fn info(&self, revision: u32) -> Result<SvnInfo, ()> {
         let n = Command::new("svnlook")
             .arg("info")
             .arg("-r")
             .arg(revision.to_string())
             .arg(&self.path)
             .output()
-            .expect("svnlook");
+            .map_err(|_| ())?;
 
-        let mut o = n.stdout.splitn(4, |b| *b == b'\n');
-        let committer = String::from_utf8_lossy(o.next().expect("committer")).to_string();
-        let date = DateTime::parse_from_str(
-            str::from_utf8(&o.next().expect("date")[0..25]).expect("date"),
-            "%Y-%m-%d %H:%M:%S %z",
-        )
-        .expect("date");
-        let bytes = str::from_utf8(o.next().expect("message size 1"))
-            .expect("message size 2")
-            .parse::<usize>()
-            .expect("message size 3");
-        let message = String::from_utf8_lossy(&o.next().expect("message")[0..bytes]).to_string();
+        let mut lines = n.stdout.splitn(4, |b| *b == b'\n');
 
-        SvnInfo {
-            revision,
-            committer,
-            date,
-            message,
-        }
+        let committer = lines.next().map(String::from_utf8_lossy).ok_or(())?;
+
+        let date = lines
+            .next()
+            .filter(|d| d.len() > 25)
+            .and_then(|d| str::from_utf8(&d[0..25]).ok())
+            .and_then(|d| DateTime::parse_from_str(d, "%Y-%m-%d %H:%M:%S %z").ok())
+            .ok_or(())?;
+
+        let bytes = lines
+            .next()
+            .and_then(|d| str::from_utf8(d).ok())
+            .and_then(|d| usize::from_str(d).ok())
+            .ok_or(())?;
+
+        lines
+            .next()
+            .filter(|m| m.len() > bytes)
+            .map(|m| &m[0..bytes])
+            .map(String::from_utf8_lossy)
+            .map(|msg|
+                SvnInfo {
+                    revision,
+                    committer: committer.to_string(),
+                    date,
+                    message: msg.to_string(),
+                }
+            ).ok_or(())
     }
 
     // iterator?
