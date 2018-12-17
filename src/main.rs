@@ -1,4 +1,3 @@
-
 extern crate svnlook;
 use svnlook::SvnRepo;
 
@@ -13,7 +12,10 @@ fn main() {
         let info = repo.info(rev).expect("info");
         let changed = repo.changed(rev).expect("changed");
 
-        println!("Revision r{}, by {} at {}", info.revision, info.committer, info.date);
+        println!(
+            "Revision r{}, by {} at {}",
+            info.revision, info.committer, info.date
+        );
         for change in changed {
             print!("   {:.8}: ", change.status);
 
