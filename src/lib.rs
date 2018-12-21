@@ -149,7 +149,7 @@ impl SvnRepo {
         str::from_utf8(&n.stdout[..])?
             .trim()
             .parse()
-            .map_err(|e| SvnError::from(e))
+            .map_err(SvnError::from)
     }
 
     pub fn info(&self, revision: u32) -> Result<SvnInfo, SvnError> {
