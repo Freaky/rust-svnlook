@@ -3,14 +3,14 @@ use svnlook::SvnRepo;
 
 use std::env;
 
-fn main() {
+fn main() -> Result<(), svnlook::SvnError> {
     let repo = SvnRepo::new(env::args_os().nth(1).expect("Need a path"));
 
-    let latest = repo.youngest().expect("youngest");
+    let latest = repo.youngest()?;
 
     for rev in 1..latest {
-        let info = repo.info(rev).expect("info");
-        let changed = repo.changed(rev).expect("changed");
+        let info = repo.info(rev)?;
+        let changed = repo.changed(rev)?;
 
         println!(
             "Revision r{}, by {} at {}",
@@ -26,4 +26,6 @@ fn main() {
             println!("{}", change.path.display());
         }
     }
+
+    Ok(())
 }
