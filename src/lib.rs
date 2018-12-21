@@ -1,28 +1,27 @@
 use chrono::prelude::*;
 use chrono::DateTime;
 
+use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
+use std::io;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::str;
 use std::str::FromStr;
-use std::io;
-use std::error::Error;
 
 #[derive(Debug)]
 pub enum SvnError {
     CommandError(io::Error),
     ExitFailure(std::process::ExitStatus),
-    ParseError
+    ParseError,
 }
-
 
 impl fmt::Display for SvnError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"{}", self.description())
+        write!(f, "{}", self.description())
     }
 }
 
@@ -31,7 +30,7 @@ impl Error for SvnError {
         match self {
             SvnError::CommandError(io) => io.description(),
             SvnError::ExitFailure(status) => "non-zero exit from command",
-            SvnError::ParseError => "parse error"
+            SvnError::ParseError => "parse error",
         }
     }
 }
@@ -144,10 +143,13 @@ impl SvnRepo {
             .output()?;
 
         if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status))
+            return Err(SvnError::ExitFailure(n.status));
         }
 
-        str::from_utf8(&n.stdout[..])?.trim().parse().map_err(|e| SvnError::from(e))
+        str::from_utf8(&n.stdout[..])?
+            .trim()
+            .parse()
+            .map_err(|e| SvnError::from(e))
     }
 
     pub fn info(&self, revision: u32) -> Result<SvnInfo, SvnError> {
@@ -159,12 +161,15 @@ impl SvnRepo {
             .output()?;
 
         if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status))
+            return Err(SvnError::ExitFailure(n.status));
         }
 
         let mut lines = n.stdout.splitn(4, |b| *b == b'\n');
 
-        let committer = lines.next().map(String::from_utf8_lossy).ok_or(SvnError::ParseError)?;
+        let committer = lines
+            .next()
+            .map(String::from_utf8_lossy)
+            .ok_or(SvnError::ParseError)?;
 
         let date = lines
             .next()
@@ -204,7 +209,7 @@ impl SvnRepo {
             .output()?;
 
         if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status))
+            return Err(SvnError::ExitFailure(n.status));
         }
 
         let mut changes = vec![];
@@ -254,7 +259,11 @@ impl SvnRepo {
     //  <diff>
     //
     // {Added,Modified,Deleted}: <next_filename>
-    pub fn diff<R: AsRef<Path>>(&self, revision: u32, filename: Option<R>) -> Result<Vec<u8>, SvnError> {
+    pub fn diff<R: AsRef<Path>>(
+        &self,
+        revision: u32,
+        filename: Option<R>,
+    ) -> Result<Vec<u8>, SvnError> {
         let n = Command::new("svnlook")
             .arg("--ignore-properties")
             .arg("--diff-copy-from")
@@ -265,7 +274,7 @@ impl SvnRepo {
             .output()?;
 
         if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status))
+            return Err(SvnError::ExitFailure(n.status));
         }
 
         Ok(n.stdout)
@@ -287,7 +296,7 @@ impl SvnRepo {
             .output()?;
 
         if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status))
+            return Err(SvnError::ExitFailure(n.status));
         }
 
         Ok(n.stdout)
