@@ -3,14 +3,11 @@ use chrono::DateTime;
 
 use std::error::Error;
 use std::ffi::OsStr;
-use std::fmt;
-use std::io;
 use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::str;
-use std::str::FromStr;
+use std::str::{self, FromStr};
+use std::{fmt, io};
 
 #[derive(Debug)]
 pub enum SvnError {
@@ -42,13 +39,13 @@ impl From<io::Error> for SvnError {
 }
 
 impl From<std::str::Utf8Error> for SvnError {
-    fn from(err: std::str::Utf8Error) -> Self {
+    fn from(_err: std::str::Utf8Error) -> Self {
         SvnError::ParseError
     }
 }
 
 impl From<std::num::ParseIntError> for SvnError {
-    fn from(err: std::num::ParseIntError) -> Self {
+    fn from(_err: std::num::ParseIntError) -> Self {
         SvnError::ParseError
     }
 }
