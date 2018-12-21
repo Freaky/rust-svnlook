@@ -1,4 +1,3 @@
-extern crate svnlook;
 use svnlook::SvnRepo;
 
 use std::env;

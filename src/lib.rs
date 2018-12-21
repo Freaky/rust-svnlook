@@ -1,4 +1,3 @@
-extern crate chrono;
 use chrono::prelude::*;
 use chrono::DateTime;
 
