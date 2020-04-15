@@ -2,10 +2,11 @@ use chrono::prelude::*;
 use chrono::DateTime;
 
 use std::error::Error;
+use std::fmt;
+use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
 use std::str::{self, FromStr};
-use std::{fmt, io};
 
 #[derive(Debug)]
 pub enum SvnError {
@@ -60,7 +61,7 @@ pub struct SvnInfo {
 #[derive(Debug)]
 pub enum SvnStatus {
     Added,
-    Copied,
+    Copied(Option<SvnFrom>),
     Deleted,
     Updated,
     PropChange,
@@ -74,7 +75,7 @@ impl SvnStatus {
 
         Ok(match &s[0..3] {
             b"A  " => SvnStatus::Added,
-            b"A +" => SvnStatus::Copied,
+            b"A +" => SvnStatus::Copied(None),
             b"D  " => SvnStatus::Deleted,
             b"U  " => SvnStatus::Updated,
             b"_U " => SvnStatus::PropChange,
@@ -91,19 +92,13 @@ impl fmt::Display for SvnStatus {
             "{}",
             match self {
                 SvnStatus::Added => "Added",
-                SvnStatus::Copied => "Copied",
+                SvnStatus::Copied(_) => "Copied",
                 SvnStatus::Deleted => "Deleted",
                 SvnStatus::Updated => "Updated",
                 SvnStatus::PropChange => "PropChange",
             }
         )
     }
-}
-
-#[derive(Debug)]
-pub struct Delta {
-    pub additions: u32,
-    pub deletions: u32,
 }
 
 #[derive(Debug)]
@@ -116,8 +111,48 @@ pub struct SvnFrom {
 pub struct SvnChange {
     pub path: PathBuf,
     pub status: SvnStatus,
-    pub from: Option<SvnFrom>,
-    pub delta: Option<Delta>,
+}
+
+struct SvnLookCommand {
+    child: Child,
+    stdout: Option<BufReader<ChildStdout>>,
+}
+
+impl SvnLookCommand {
+    fn spawn(mut cmd: Command) -> Result<Self, SvnError> {
+        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
+
+        let stdout = child.stdout.take().unwrap();
+        Ok(Self {
+            child,
+            stdout: Some(BufReader::new(stdout)),
+        })
+    }
+
+    pub fn finish(&mut self) -> Result<ExitStatus, SvnError> {
+        if let Some(out) = self.stdout.take() {
+            drop(out);
+            Ok(self.child.wait()?)
+        } else {
+            Err(SvnError::CommandError(io::Error::new(io::ErrorKind::Other, "closed")))
+        }
+    }
+}
+
+impl Read for SvnLookCommand {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.stdout.as_mut().map(|s| s.read(buf)).unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+    }
+}
+
+impl BufRead for SvnLookCommand {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.stdout.as_mut().map(|s| s.fill_buf()).unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.stdout.as_mut().map(|s| s.consume(amt));
+    }
 }
 
 impl SvnRepo {
@@ -189,56 +224,13 @@ impl SvnRepo {
             .ok_or(SvnError::ParseError)
     }
 
-    // iterator?
-    pub fn changed(&self, revision: u32) -> Result<Vec<SvnChange>, SvnError> {
-        let n = Command::new("svnlook")
-            .arg("--copy-info")
-            .arg("changed")
-            .arg("-r")
+    pub fn changed(&self, revision: u32) -> Result<ChangedIterator, SvnError> {
+        let mut cmd = Command::new("svnlook");
+        cmd.args(&["changed", "--copy-info", "-r"])
             .arg(revision.to_string())
-            .arg(&self.path)
-            .output()?;
+            .arg(&self.path);
 
-        if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status));
-        }
-
-        let mut changes = vec![];
-        let mut lines = n.stdout.split(|&b| b == b'\n').filter(|s| s.len() > 4);
-
-        while let Some(line) = lines.next() {
-            let (change, path) = line.split_at(4);
-            let mut change = SvnChange {
-                path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
-                status: SvnStatus::from_bytes(change)?,
-                from: None,
-                delta: None,
-            };
-
-            if let SvnStatus::Copied = change.status {
-                change.from = lines
-                    .next()
-                    .filter(|line| line.starts_with(b"    (from ") && line.ends_with(b")"))
-                    .map(|line| &line[10..line.len() - 1])
-                    .and_then(|line| {
-                        line.iter()
-                            .rposition(|&b| b == b':')
-                            .map(|pos| line.split_at(pos))
-                    })
-                    .filter(|(_path, revision)| revision.len() > 2)
-                    .map(|(path, revision)| SvnFrom {
-                        path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
-                        revision: str::from_utf8(&revision[2..])
-                            .ok()
-                            .and_then(|s| u32::from_str(s).ok())
-                            .unwrap_or(0),
-                    });
-            }
-
-            changes.push(change);
-        }
-
-        Ok(changes)
+        Ok(ChangedIterator::from(SvnLookCommand::spawn(cmd)?))
     }
 
     // io::Read?
@@ -250,10 +242,7 @@ impl SvnRepo {
     //  <diff>
     //
     // {Added,Modified,Deleted}: <next_filename>
-    pub fn diff<R: AsRef<Path>>(
-        &self,
-        revision: u32
-    ) -> Result<Vec<u8>, SvnError> {
+    pub fn diff<R: AsRef<Path>>(&self, revision: u32) -> Result<Vec<u8>, SvnError> {
         let n = Command::new("svnlook")
             .arg("--ignore-properties")
             .arg("--diff-copy-from")
@@ -271,11 +260,7 @@ impl SvnRepo {
     }
 
     // io::Read?
-    pub fn cat<R: AsRef<Path>>(
-        &self,
-        revision: u32,
-        filename: R
-    ) -> Result<Vec<u8>, SvnError> {
+    pub fn cat<R: AsRef<Path>>(&self, revision: u32, filename: R) -> Result<Vec<u8>, SvnError> {
         let n = Command::new("svnlook")
             .arg("cat")
             .arg("-r")
@@ -289,5 +274,88 @@ impl SvnRepo {
         }
 
         Ok(n.stdout)
+    }
+}
+
+pub struct ChangedIterator {
+    svnlook: SvnLookCommand,
+    line: Vec<u8>,
+}
+
+impl From<SvnLookCommand> for ChangedIterator {
+    fn from(cmd: SvnLookCommand) -> Self {
+        Self {
+            svnlook: cmd,
+            line: vec![],
+        }
+    }
+}
+
+impl Drop for ChangedIterator {
+    fn drop(&mut self) {
+        let _ = self.svnlook.finish();
+    }
+}
+
+fn chomp(slice: &[u8]) -> &[u8] {
+    if slice.ends_with(b"\n") {
+        &slice[..slice.len() - 1]
+    } else {
+        slice
+    }
+}
+
+impl ChangedIterator {
+    fn parse(&mut self) -> Result<SvnChange, SvnError> {
+        let (change, path) = self.line.split_at(4);
+        let mut change = SvnChange {
+            path: PathBuf::from(String::from_utf8_lossy(chomp(path)).to_string()),
+            status: SvnStatus::from_bytes(change)?,
+        };
+        self.line.clear();
+
+        if let SvnStatus::Copied(_) = change.status {
+            self.svnlook.read_until(b'\n', &mut self.line)?;
+            let line = chomp(&self.line);
+
+            if !line.starts_with(b"    (from ") || !line.ends_with(b")") {
+                return Err(SvnError::ParseError);
+            }
+
+            let line: &[u8] = &line[10..line.len() - 1];
+            let from = line
+                .iter()
+                .rposition(|&b| b == b':')
+                .map(|pos| line.split_at(pos))
+                .filter(|(_, revision)| revision.len() > 2)
+                .map(|(path, revision)| {
+                    str::from_utf8(&revision[2..])
+                        .map_err(SvnError::from)
+                        .and_then(|s| u32::from_str(s).map_err(SvnError::from))
+                        .map(|revision| SvnFrom {
+                            path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
+                            revision,
+                        })
+                })
+                .transpose()?;
+            change.status = SvnStatus::Copied(from);
+        }
+
+        Ok(change)
+    }
+}
+
+impl Iterator for ChangedIterator {
+    type Item = Result<SvnChange, SvnError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.line.clear();
+
+        match self.svnlook.read_until(b'\n', &mut self.line) {
+            Ok(n) if n > 4 => Some(self.parse()),
+            Ok(n) if n > 0 => Some(Err(SvnError::ParseError)),
+            Ok(_) => None,
+            Err(e) => Some(Err(SvnError::from(e))),
+        }
     }
 }

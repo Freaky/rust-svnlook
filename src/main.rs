@@ -1,4 +1,4 @@
-use svnlook::SvnRepo;
+use svnlook::{SvnRepo, SvnStatus};
 
 use std::env;
 
@@ -15,10 +15,11 @@ fn main() -> Result<(), svnlook::SvnError> {
             "Revision r{}, by {} at {}",
             info.revision, info.committer, info.date
         );
-        for change in changed {
+        for change in changed.take(5) {
+            let change = change?;
             print!("   {:.8}: ", change.status);
 
-            if let Some(from) = change.from {
+            if let SvnStatus::Copied(Some(ref from)) = change.status {
                 print!("{}@r{} -> ", from.path.display(), from.revision);
             }
 
