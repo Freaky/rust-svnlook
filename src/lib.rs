@@ -167,11 +167,17 @@ impl BufRead for SvnLookCommand {
     }
 }
 
-impl SvnRepo {
-    pub fn new<R: AsRef<Path>>(path: R) -> Self {
+impl<P: AsRef<Path>> From<P> for SvnRepo {
+    fn from(path: P) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
         }
+    }
+}
+
+impl SvnRepo {
+    pub fn new<R: AsRef<Path>>(path: R) -> Self {
+        Self::from(path)
     }
 
     pub fn youngest(&self) -> Result<u32, SvnError> {
