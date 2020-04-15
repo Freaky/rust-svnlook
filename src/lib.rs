@@ -1,6 +1,7 @@
 use chrono::prelude::*;
 use chrono::DateTime;
 
+use std::convert::{TryFrom, TryInto};
 use std::error::Error;
 use std::fmt;
 use std::io::{self, BufRead, BufReader, Read};
@@ -67,8 +68,10 @@ pub enum SvnStatus {
     PropChange,
 }
 
-impl SvnStatus {
-    fn from_bytes(s: &[u8]) -> Result<Self, SvnError> {
+impl TryFrom<&[u8]> for SvnStatus {
+    type Error = SvnError;
+
+    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
         if s.len() < 3 {
             return Err(SvnError::ParseError);
         }
@@ -131,7 +134,7 @@ impl SvnLookCommand {
 
     pub fn finish(&mut self) -> Result<ExitStatus, SvnError> {
         self.stdout = None;
-        
+
         Ok(self.child.wait()?)
     }
 }
@@ -317,7 +320,7 @@ impl ChangedIterator {
         let (change, path) = self.line.split_at(4);
         let mut change = SvnChange {
             path: PathBuf::from(String::from_utf8_lossy(chomp(path)).to_string()),
-            status: SvnStatus::from_bytes(change)?,
+            status: change.try_into()?,
         };
         self.line.clear();
 
