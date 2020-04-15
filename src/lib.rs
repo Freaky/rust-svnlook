@@ -116,7 +116,7 @@ pub struct SvnChange {
     pub status: SvnStatus,
 }
 
-struct SvnLookCommand {
+pub struct SvnLookCommand {
     child: Child,
     stdout: Option<BufReader<ChildStdout>>,
 }
@@ -136,6 +136,12 @@ impl SvnLookCommand {
         self.stdout = None;
 
         Ok(self.child.wait()?)
+    }
+}
+
+impl Drop for SvnLookCommand {
+    fn drop(&mut self) {
+        let _ = self.finish();
     }
 }
 
@@ -171,6 +177,7 @@ impl SvnRepo {
     pub fn youngest(&self) -> Result<u32, SvnError> {
         let n = Command::new("svnlook")
             .arg("youngest")
+            .arg("--")
             .arg(&self.path)
             .output()?;
 
@@ -189,6 +196,7 @@ impl SvnRepo {
             .arg("info")
             .arg("-r")
             .arg(revision.to_string())
+            .arg("--")
             .arg(&self.path)
             .output()?;
 
@@ -234,52 +242,37 @@ impl SvnRepo {
         let mut cmd = Command::new("svnlook");
         cmd.args(&["changed", "--copy-info", "-r"])
             .arg(revision.to_string())
+            .arg("--")
             .arg(&self.path);
 
         Ok(ChangedIterator::from(SvnLookCommand::spawn(cmd)?))
     }
 
-    // io::Read?
-    //
-    // {Added,Modified,Deleted}: <filename>
-    // ===================================================================
-    // --- old_filename (rev \d+)
-    // +++ new_filename yyyy-mm-dd hh:mm:ss UTC (rev \d+)
-    //  <diff>
-    //
-    // {Added,Modified,Deleted}: <next_filename>
-    pub fn diff<R: AsRef<Path>>(&self, revision: u32) -> Result<Vec<u8>, SvnError> {
-        let n = Command::new("svnlook")
+    pub fn diff(&self, revision: u32) -> Result<SvnLookCommand, SvnError> {
+        let mut cmd = Command::new("svnlook");
+        cmd
             .arg("--ignore-properties")
             .arg("--diff-copy-from")
             .arg("diff")
             .arg("-r")
             .arg(revision.to_string())
-            .arg(&self.path)
-            .output()?;
+            .arg("--")
+            .arg(&self.path);
 
-        if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status));
-        }
-
-        Ok(n.stdout)
+            SvnLookCommand::spawn(cmd)
     }
 
-    // io::Read?
-    pub fn cat<R: AsRef<Path>>(&self, revision: u32, filename: R) -> Result<Vec<u8>, SvnError> {
-        let n = Command::new("svnlook")
+    pub fn cat<R: AsRef<Path>>(&self, revision: u32, filename: R) -> Result<SvnLookCommand, SvnError> {
+        let mut cmd = Command::new("svnlook");
+        cmd
             .arg("cat")
             .arg("-r")
             .arg(revision.to_string())
+            .arg("--")
             .arg(&self.path)
-            .arg(filename.as_ref().as_os_str())
-            .output()?;
+            .arg(filename.as_ref().as_os_str());
 
-        if !n.status.success() {
-            return Err(SvnError::ExitFailure(n.status));
-        }
-
-        Ok(n.stdout)
+        SvnLookCommand::spawn(cmd)
     }
 }
 
