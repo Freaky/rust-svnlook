@@ -256,8 +256,7 @@ impl SvnRepo {
 
     pub fn diff(&self, revision: u64) -> Result<SvnLookCommand, SvnError> {
         let mut cmd = Command::new("svnlook");
-        cmd
-            .arg("--ignore-properties")
+        cmd.arg("--ignore-properties")
             .arg("--diff-copy-from")
             .arg("diff")
             .arg("-r")
@@ -265,13 +264,16 @@ impl SvnRepo {
             .arg("--")
             .arg(&self.path);
 
-            SvnLookCommand::spawn(cmd)
+        SvnLookCommand::spawn(cmd)
     }
 
-    pub fn cat<R: AsRef<Path>>(&self, revision: u64, filename: R) -> Result<SvnLookCommand, SvnError> {
+    pub fn cat<R: AsRef<Path>>(
+        &self,
+        revision: u64,
+        filename: R,
+    ) -> Result<SvnLookCommand, SvnError> {
         let mut cmd = Command::new("svnlook");
-        cmd
-            .arg("cat")
+        cmd.arg("cat")
             .arg("-r")
             .arg(revision.to_string())
             .arg("--")
