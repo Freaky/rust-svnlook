@@ -287,6 +287,7 @@ impl SvnRepo {
 pub struct ChangedIterator {
     svnlook: SvnLookCommand,
     line: Vec<u8>,
+    finished: bool,
 }
 
 impl From<SvnLookCommand> for ChangedIterator {
@@ -294,6 +295,7 @@ impl From<SvnLookCommand> for ChangedIterator {
         Self {
             svnlook: cmd,
             line: vec![],
+            finished: false,
         }
     }
 }
@@ -362,8 +364,19 @@ impl Iterator for ChangedIterator {
     fn next(&mut self) -> Option<Self::Item> {
         self.line.clear();
 
+        if self.finished {
+            return None;
+        }
+
         match self.svnlook.read_until(b'\n', &mut self.line) {
-            Ok(0) => None,
+            Ok(0) => {
+                self.finished = true;
+                match self.svnlook.finish() {
+                    Ok(status) if status.success() => None,
+                    Ok(status) => Some(Err(SvnError::ExitFailure(status))),
+                    Err(e) => Some(Err(e)),
+                }
+            }
             Ok(_) => Some(self.parse()),
             Err(e) => Some(Err(SvnError::from(e))),
         }
