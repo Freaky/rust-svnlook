@@ -18,7 +18,7 @@ fn main() -> Result<(), svnlook::SvnError> {
                 let change = change?;
                 print!("   {:.8}: ", change.status);
 
-                if let SvnStatus::Copied(Some(ref from)) = change.status {
+                if let SvnStatus::Copied(from) = change.status {
                     print!("{}@r{} -> ", from.path.display(), from.revision);
                 }
 
@@ -43,9 +43,13 @@ fn main() -> Result<(), svnlook::SvnError> {
             std::io::copy(&mut repo.cat(rev, path)?, &mut std::io::stdout())?;
         }
         "walk" => {
+            let from = env::args()
+                .nth(3)
+                .map(|s| s.parse().expect("Not a number"))
+                .unwrap_or(1);
             let latest = repo.youngest()?;
 
-            for rev in 1..latest {
+            for rev in from..latest {
                 let info = repo.info(rev)?;
                 let changed = repo.changed(rev)?;
 
@@ -57,7 +61,7 @@ fn main() -> Result<(), svnlook::SvnError> {
                     let change = change?;
                     print!("   {:.8}: ", change.status);
 
-                    if let SvnStatus::Copied(Some(from)) = change.status {
+                    if let SvnStatus::Copied(from) = change.status {
                         print!("{}@r{} -> ", from.path.display(), from.revision);
                     }
 

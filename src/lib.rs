@@ -46,12 +46,12 @@ impl From<std::num::ParseIntError> for SvnError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SvnRepo {
     pub path: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SvnInfo {
     pub revision: u64,
     pub committer: String,
@@ -59,10 +59,10 @@ pub struct SvnInfo {
     pub message: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SvnStatus {
     Added,
-    Copied(Option<SvnFrom>),
+    Copied(SvnFrom),
     Deleted,
     Updated,
     PropChange,
@@ -78,7 +78,7 @@ impl TryFrom<&[u8]> for SvnStatus {
 
         Ok(match &s[0..3] {
             b"A  " => SvnStatus::Added,
-            b"A +" => SvnStatus::Copied(None),
+            b"A +" => SvnStatus::Copied(SvnFrom::default()),
             b"D  " => SvnStatus::Deleted,
             b"U  " => SvnStatus::Updated,
             b"_U " => SvnStatus::PropChange,
@@ -104,18 +104,19 @@ impl fmt::Display for SvnStatus {
     }
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct SvnFrom {
     pub path: PathBuf,
     pub revision: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SvnChange {
     pub path: PathBuf,
     pub status: SvnStatus,
 }
 
+#[derive(Debug)]
 pub struct SvnLookCommand {
     child: Child,
     stdout: Option<BufReader<ChildStdout>>,
@@ -341,7 +342,8 @@ impl ChangedIterator {
                 .rposition(|&b| b == b':')
                 .map(|pos| line.split_at(pos))
                 .filter(|(_, revision)| revision.len() > 2)
-                .map(|(path, revision)| {
+                .ok_or(SvnError::ParseError)
+                .and_then(|(path, revision)| {
                     str::from_utf8(&revision[2..])
                         .map_err(SvnError::from)
                         .and_then(|s| u64::from_str(s).map_err(SvnError::from))
@@ -349,8 +351,7 @@ impl ChangedIterator {
                             path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
                             revision,
                         })
-                })
-                .transpose()?;
+                })?;
             change.status = SvnStatus::Copied(from);
         }
 
