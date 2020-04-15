@@ -3,7 +3,6 @@ use chrono::DateTime;
 
 use std::error::Error;
 use std::ffi::OsStr;
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, FromStr};
@@ -215,7 +214,7 @@ impl SvnRepo {
         while let Some(line) = lines.next() {
             let (change, path) = line.split_at(4);
             let mut change = SvnChange {
-                path: PathBuf::from(OsStr::from_bytes(path)),
+                path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
                 status: SvnStatus::from_bytes(change)?,
                 from: None,
                 delta: None,
@@ -233,7 +232,7 @@ impl SvnRepo {
                     })
                     .filter(|(_path, revision)| revision.len() > 2)
                     .map(|(path, revision)| SvnFrom {
-                        path: PathBuf::from(OsStr::from_bytes(path)),
+                        path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
                         revision: str::from_utf8(&revision[2..])
                             .ok()
                             .and_then(|s| u32::from_str(s).ok())
@@ -298,7 +297,4 @@ impl SvnRepo {
 
         Ok(n.stdout)
     }
-
-    // iterator?
-    pub fn diffstat(&self, revision: u32) {}
 }
