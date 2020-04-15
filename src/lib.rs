@@ -53,7 +53,7 @@ pub struct SvnRepo {
 
 #[derive(Debug)]
 pub struct SvnInfo {
-    pub revision: u32,
+    pub revision: u64,
     pub committer: String,
     pub date: DateTime<FixedOffset>,
     pub message: String,
@@ -107,7 +107,7 @@ impl fmt::Display for SvnStatus {
 #[derive(Debug)]
 pub struct SvnFrom {
     pub path: PathBuf,
-    pub revision: u32,
+    pub revision: u64,
 }
 
 #[derive(Debug)]
@@ -180,7 +180,7 @@ impl SvnRepo {
         Self::from(path)
     }
 
-    pub fn youngest(&self) -> Result<u32, SvnError> {
+    pub fn youngest(&self) -> Result<u64, SvnError> {
         let n = Command::new("svnlook")
             .arg("youngest")
             .arg("--")
@@ -197,7 +197,7 @@ impl SvnRepo {
             .map_err(SvnError::from)
     }
 
-    pub fn info(&self, revision: u32) -> Result<SvnInfo, SvnError> {
+    pub fn info(&self, revision: u64) -> Result<SvnInfo, SvnError> {
         let n = Command::new("svnlook")
             .arg("info")
             .arg("-r")
@@ -244,7 +244,7 @@ impl SvnRepo {
             .ok_or(SvnError::ParseError)
     }
 
-    pub fn changed(&self, revision: u32) -> Result<ChangedIterator, SvnError> {
+    pub fn changed(&self, revision: u64) -> Result<ChangedIterator, SvnError> {
         let mut cmd = Command::new("svnlook");
         cmd.args(&["changed", "--copy-info", "-r"])
             .arg(revision.to_string())
@@ -254,7 +254,7 @@ impl SvnRepo {
         Ok(ChangedIterator::from(SvnLookCommand::spawn(cmd)?))
     }
 
-    pub fn diff(&self, revision: u32) -> Result<SvnLookCommand, SvnError> {
+    pub fn diff(&self, revision: u64) -> Result<SvnLookCommand, SvnError> {
         let mut cmd = Command::new("svnlook");
         cmd
             .arg("--ignore-properties")
@@ -268,7 +268,7 @@ impl SvnRepo {
             SvnLookCommand::spawn(cmd)
     }
 
-    pub fn cat<R: AsRef<Path>>(&self, revision: u32, filename: R) -> Result<SvnLookCommand, SvnError> {
+    pub fn cat<R: AsRef<Path>>(&self, revision: u64, filename: R) -> Result<SvnLookCommand, SvnError> {
         let mut cmd = Command::new("svnlook");
         cmd
             .arg("cat")
@@ -340,7 +340,7 @@ impl ChangedIterator {
                 .map(|(path, revision)| {
                     str::from_utf8(&revision[2..])
                         .map_err(SvnError::from)
-                        .and_then(|s| u32::from_str(s).map_err(SvnError::from))
+                        .and_then(|s| u64::from_str(s).map_err(SvnError::from))
                         .map(|revision| SvnFrom {
                             path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
                             revision,

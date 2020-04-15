@@ -9,7 +9,7 @@ fn main() -> Result<(), svnlook::SvnError> {
     match &cmd[..] {
         "youngest" => println!("{}", repo.youngest()?),
         "changes" => {
-            let rev: u32 = env::args().nth(3).expect("Need a revision").parse().expect("Not a number");
+            let rev = env::args().nth(3).expect("Need a revision").parse().expect("Not a number");
             for change in repo.changed(rev)? {
                 let change = change?;
                 print!("   {:.8}: ", change.status);
@@ -22,11 +22,11 @@ fn main() -> Result<(), svnlook::SvnError> {
             }
         },
         "diff" => {
-            let rev: u32 = env::args().nth(3).expect("Need a revision").parse().expect("Not a number");
+            let rev = env::args().nth(3).expect("Need a revision").parse().expect("Not a number");
             std::io::copy(&mut repo.diff(rev)?, &mut std::io::stdout())?;
         }
         "cat" => {
-            let rev: u32 = env::args().nth(3).expect("Need a revision").parse().expect("Not a number");
+            let rev = env::args().nth(3).expect("Need a revision").parse().expect("Not a number");
             let path = env::args().nth(4).expect("Need a file path");
             std::io::copy(&mut repo.cat(rev, path)?, &mut std::io::stdout())?;
         }
