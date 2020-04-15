@@ -2,7 +2,6 @@ use chrono::prelude::*;
 use chrono::DateTime;
 
 use std::error::Error;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::{self, FromStr};
@@ -15,18 +14,14 @@ pub enum SvnError {
     ParseError,
 }
 
+impl Error for SvnError {}
+
 impl fmt::Display for SvnError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.description())
-    }
-}
-
-impl Error for SvnError {
-    fn description(&self) -> &str {
         match self {
-            SvnError::CommandError(io) => io.description(),
-            SvnError::ExitFailure(status) => "non-zero exit from command",
-            SvnError::ParseError => "parse error",
+            SvnError::CommandError(io) => io.fmt(f),
+            SvnError::ExitFailure(status) => write!(f, "non-zero exit from command: {}", status),
+            SvnError::ParseError => write!(f, "parse error"),
         }
     }
 }
@@ -257,8 +252,7 @@ impl SvnRepo {
     // {Added,Modified,Deleted}: <next_filename>
     pub fn diff<R: AsRef<Path>>(
         &self,
-        revision: u32,
-        filename: Option<R>,
+        revision: u32
     ) -> Result<Vec<u8>, SvnError> {
         let n = Command::new("svnlook")
             .arg("--ignore-properties")
@@ -280,8 +274,7 @@ impl SvnRepo {
     pub fn cat<R: AsRef<Path>>(
         &self,
         revision: u32,
-        filename: R,
-        limit: Option<usize>,
+        filename: R
     ) -> Result<Vec<u8>, SvnError> {
         let n = Command::new("svnlook")
             .arg("cat")
