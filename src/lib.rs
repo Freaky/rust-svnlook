@@ -130,15 +130,9 @@ impl SvnLookCommand {
     }
 
     pub fn finish(&mut self) -> Result<ExitStatus, SvnError> {
-        if let Some(out) = self.stdout.take() {
-            drop(out);
-            Ok(self.child.wait()?)
-        } else {
-            Err(SvnError::CommandError(io::Error::new(
-                io::ErrorKind::Other,
-                "closed",
-            )))
-        }
+        self.stdout = None;
+        
+        Ok(self.child.wait()?)
     }
 }
 
