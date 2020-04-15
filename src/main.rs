@@ -15,7 +15,7 @@ fn main() -> Result<(), svnlook::SvnError> {
             "Revision r{}, by {} at {}",
             info.revision, info.committer, info.date
         );
-        for change in changed.take(5) {
+        for change in changed {
             let change = change?;
             print!("   {:.8}: ", change.status);
 

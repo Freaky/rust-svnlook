@@ -134,20 +134,29 @@ impl SvnLookCommand {
             drop(out);
             Ok(self.child.wait()?)
         } else {
-            Err(SvnError::CommandError(io::Error::new(io::ErrorKind::Other, "closed")))
+            Err(SvnError::CommandError(io::Error::new(
+                io::ErrorKind::Other,
+                "closed",
+            )))
         }
     }
 }
 
 impl Read for SvnLookCommand {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.stdout.as_mut().map(|s| s.read(buf)).unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+        self.stdout
+            .as_mut()
+            .map(|s| s.read(buf))
+            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
     }
 }
 
 impl BufRead for SvnLookCommand {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        self.stdout.as_mut().map(|s| s.fill_buf()).unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+        self.stdout
+            .as_mut()
+            .map(|s| s.fill_buf())
+            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
     }
 
     fn consume(&mut self, amt: usize) {
@@ -307,6 +316,10 @@ fn chomp(slice: &[u8]) -> &[u8] {
 
 impl ChangedIterator {
     fn parse(&mut self) -> Result<SvnChange, SvnError> {
+        if self.line.len() < 4 {
+            return Err(SvnError::ParseError);
+        }
+
         let (change, path) = self.line.split_at(4);
         let mut change = SvnChange {
             path: PathBuf::from(String::from_utf8_lossy(chomp(path)).to_string()),
@@ -352,9 +365,8 @@ impl Iterator for ChangedIterator {
         self.line.clear();
 
         match self.svnlook.read_until(b'\n', &mut self.line) {
-            Ok(n) if n > 4 => Some(self.parse()),
-            Ok(n) if n > 0 => Some(Err(SvnError::ParseError)),
-            Ok(_) => None,
+            Ok(0) => None,
+            Ok(_) => Some(self.parse()),
             Err(e) => Some(Err(SvnError::from(e))),
         }
     }
