@@ -1,12 +1,12 @@
 # rust-svnlook
 
 A Rust crate for extracting information from Subversion repositories via the
-`svnlook` command.
+`svnlook`command.
 
 ## Synopsis
 
 ```rust
-let repo = SvnRepo::from("/path/to/repo");
+let repo = svnlook::Svnlook::from("/path/to/repo");
 let latest = repo.youngest()?;
 for rev in 1..latest {
     let info = repo.info(rev)?;
@@ -20,7 +20,7 @@ for rev in 1..latest {
         let change = change?;
         print!("   {:.8}: ", change.status);
 
-        if let SvnStatus::Copied(Some(from)) = change.status {
+        if let SvnStatus::Copied(from) = change.status {
             print!("{}@r{} -> ", from.path.display(), from.revision);
         }
 

@@ -47,7 +47,7 @@ impl From<std::num::ParseIntError> for SvnError {
 }
 
 #[derive(Debug, Clone)]
-pub struct SvnRepo {
+pub struct Svnlook {
     pub path: PathBuf,
 }
 
@@ -117,12 +117,12 @@ pub struct SvnChange {
 }
 
 #[derive(Debug)]
-pub struct SvnLookCommand {
+pub struct SvnlookCommand {
     child: Child,
     stdout: Option<BufReader<ChildStdout>>,
 }
 
-impl SvnLookCommand {
+impl SvnlookCommand {
     fn spawn(mut cmd: Command) -> Result<Self, SvnError> {
         let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
 
@@ -140,13 +140,13 @@ impl SvnLookCommand {
     }
 }
 
-impl Drop for SvnLookCommand {
+impl Drop for SvnlookCommand {
     fn drop(&mut self) {
         let _ = self.finish();
     }
 }
 
-impl Read for SvnLookCommand {
+impl Read for SvnlookCommand {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.stdout
             .as_mut()
@@ -155,7 +155,7 @@ impl Read for SvnLookCommand {
     }
 }
 
-impl BufRead for SvnLookCommand {
+impl BufRead for SvnlookCommand {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.stdout
             .as_mut()
@@ -168,7 +168,7 @@ impl BufRead for SvnLookCommand {
     }
 }
 
-impl<P: AsRef<Path>> From<P> for SvnRepo {
+impl<P: AsRef<Path>> From<P> for Svnlook {
     fn from(path: P) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
@@ -176,7 +176,7 @@ impl<P: AsRef<Path>> From<P> for SvnRepo {
     }
 }
 
-impl SvnRepo {
+impl Svnlook {
     pub fn new<R: AsRef<Path>>(path: R) -> Self {
         Self::from(path)
     }
@@ -245,17 +245,17 @@ impl SvnRepo {
             .ok_or(SvnError::ParseError)
     }
 
-    pub fn changed(&self, revision: u64) -> Result<ChangedIterator, SvnError> {
+    pub fn changed(&self, revision: u64) -> Result<SvnChangedIter, SvnError> {
         let mut cmd = Command::new("svnlook");
         cmd.args(&["changed", "--copy-info", "-r"])
             .arg(revision.to_string())
             .arg("--")
             .arg(&self.path);
 
-        Ok(ChangedIterator::from(SvnLookCommand::spawn(cmd)?))
+        Ok(SvnChangedIter::from(SvnlookCommand::spawn(cmd)?))
     }
 
-    pub fn diff(&self, revision: u64) -> Result<SvnLookCommand, SvnError> {
+    pub fn diff(&self, revision: u64) -> Result<SvnlookCommand, SvnError> {
         let mut cmd = Command::new("svnlook");
         cmd.arg("--ignore-properties")
             .arg("--diff-copy-from")
@@ -265,14 +265,14 @@ impl SvnRepo {
             .arg("--")
             .arg(&self.path);
 
-        SvnLookCommand::spawn(cmd)
+        SvnlookCommand::spawn(cmd)
     }
 
     pub fn cat<R: AsRef<Path>>(
         &self,
         revision: u64,
         filename: R,
-    ) -> Result<SvnLookCommand, SvnError> {
+    ) -> Result<SvnlookCommand, SvnError> {
         let mut cmd = Command::new("svnlook");
         cmd.arg("cat")
             .arg("-r")
@@ -281,18 +281,18 @@ impl SvnRepo {
             .arg(&self.path)
             .arg(filename.as_ref().as_os_str());
 
-        SvnLookCommand::spawn(cmd)
+        SvnlookCommand::spawn(cmd)
     }
 }
 
-pub struct ChangedIterator {
-    svnlook: SvnLookCommand,
+pub struct SvnChangedIter {
+    svnlook: SvnlookCommand,
     line: Vec<u8>,
     finished: bool,
 }
 
-impl From<SvnLookCommand> for ChangedIterator {
-    fn from(cmd: SvnLookCommand) -> Self {
+impl From<SvnlookCommand> for SvnChangedIter {
+    fn from(cmd: SvnlookCommand) -> Self {
         Self {
             svnlook: cmd,
             line: vec![],
@@ -301,7 +301,7 @@ impl From<SvnLookCommand> for ChangedIterator {
     }
 }
 
-impl Drop for ChangedIterator {
+impl Drop for SvnChangedIter {
     fn drop(&mut self) {
         let _ = self.svnlook.finish();
     }
@@ -315,7 +315,7 @@ fn chomp(slice: &[u8]) -> &[u8] {
     }
 }
 
-impl ChangedIterator {
+impl SvnChangedIter {
     fn parse(&mut self) -> Result<SvnChange, SvnError> {
         if self.line.len() < 4 {
             return Err(SvnError::ParseError);
@@ -359,7 +359,7 @@ impl ChangedIterator {
     }
 }
 
-impl Iterator for ChangedIterator {
+impl Iterator for SvnChangedIter {
     type Item = Result<SvnChange, SvnError>;
 
     fn next(&mut self) -> Option<Self::Item> {

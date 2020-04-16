@@ -1,10 +1,10 @@
-use svnlook::{SvnRepo, SvnStatus};
+use svnlook::{SvnStatus, Svnlook};
 
 use std::env;
 
 fn main() -> Result<(), svnlook::SvnError> {
     let cmd = env::args().nth(1).expect("Need a command");
-    let repo = SvnRepo::from(env::args_os().nth(2).expect("Need a repository path"));
+    let repo = Svnlook::from(env::args_os().nth(2).expect("Need a repository path"));
 
     match &cmd[..] {
         "youngest" => println!("{}", repo.youngest()?),
