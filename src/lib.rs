@@ -40,6 +40,32 @@ impl SvnlookCommand {
         })
     }
 
+    fn handle_io<F: FnOnce(&mut BufReader<ChildStdout>) -> io::Result<usize>>(
+        &mut self,
+        handler: F,
+    ) -> io::Result<usize> {
+        let res = self
+            .stdout
+            .as_mut()
+            .map(handler)
+            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")));
+
+        if let Ok(0) = res {
+            match self.finish() {
+                Ok(status) if !status.success() => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "svnlook exited nonzero",
+                    ))
+                }
+                Err(SvnError::CommandError(e)) => return Err(e),
+                _ => (),
+            }
+        }
+
+        res
+    }
+
     pub fn finish(&mut self) -> Result<ExitStatus, SvnError> {
         self.stdout = None;
 
@@ -55,17 +81,11 @@ impl Drop for SvnlookCommand {
 
 impl Read for SvnlookCommand {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.stdout
-            .as_mut()
-            .map(|s| s.read(buf))
-            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+        self.handle_io(|r| r.read(buf))
     }
 
     fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut]) -> io::Result<usize> {
-        self.stdout
-            .as_mut()
-            .map(|s| s.read_vectored(bufs))
-            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+        self.handle_io(|r| r.read_vectored(bufs))
     }
 }
 
