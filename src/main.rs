@@ -1,4 +1,3 @@
-
 use std::env;
 
 fn worlds_crappiest_diffstat<R: std::io::BufRead>(diff: R) -> std::io::Result<(u32, u32)> {
