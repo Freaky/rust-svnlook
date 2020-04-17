@@ -1,4 +1,3 @@
-use svnlook::{SvnStatus, Svnlook};
 
 use std::env;
 
@@ -6,9 +5,13 @@ fn worlds_crappiest_diffstat<R: std::io::BufRead>(diff: R) -> std::io::Result<(u
     let mut counts = (0, 0);
     for line in diff.split(b'\n') {
         match line?.first() {
-            Some(b'+') => { counts.0 += 1; },
-            Some(b'-') => { counts.1 += 1; },
-            _ => ()
+            Some(b'+') => {
+                counts.0 += 1;
+            }
+            Some(b'-') => {
+                counts.1 += 1;
+            }
+            _ => (),
         }
     }
     Ok(counts)
@@ -16,7 +19,7 @@ fn worlds_crappiest_diffstat<R: std::io::BufRead>(diff: R) -> std::io::Result<(u
 
 fn main() -> Result<(), svnlook::SvnError> {
     let cmd = env::args().nth(1).expect("Need a command");
-    let repo = Svnlook::from(env::args_os().nth(2).expect("Need a repository path"));
+    let repo = svnlook::Repository::from(env::args_os().nth(2).expect("Need a repository path"));
 
     match &cmd[..] {
         "youngest" => println!("{}", repo.youngest()?),
@@ -30,7 +33,7 @@ fn main() -> Result<(), svnlook::SvnError> {
                 let change = change?;
                 print!("   {:.8}: ", change.status);
 
-                if let SvnStatus::Copied(from) = change.status {
+                if let svnlook::SvnStatus::Copied(from) = change.status {
                     print!("{}@r{} -> ", from.path.display(), from.revision);
                 }
 
@@ -43,7 +46,10 @@ fn main() -> Result<(), svnlook::SvnError> {
                 .expect("Need a revision")
                 .parse()
                 .expect("Not a number");
-            std::io::copy(&mut repo.diff().revision(rev).diff_copy_from().spawn()?, &mut std::io::stdout())?;
+            std::io::copy(
+                &mut repo.diff().revision(rev).diff_copy_from().spawn()?,
+                &mut std::io::stdout(),
+            )?;
         }
         "cat" => {
             let rev = env::args()
@@ -74,7 +80,7 @@ fn main() -> Result<(), svnlook::SvnError> {
                     let change = change?;
                     print!("   {:.8}: ", change.status);
 
-                    if let SvnStatus::Copied(from) = change.status {
+                    if let svnlook::SvnStatus::Copied(from) = change.status {
                         print!("{}@r{} -> ", from.path.display(), from.revision);
                     }
 

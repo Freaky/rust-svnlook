@@ -4,14 +4,22 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
 use std::str;
 
-mod error;
 mod commands;
+mod error;
 
-pub use error::*;
 pub use commands::*;
+pub use error::*;
 
-#[derive(Debug, Clone)]
+/// A struct representing the path to an svnlook binary
+#[derive(Default, Debug, Clone)]
 pub struct Svnlook {
+    pub path: Option<PathBuf>,
+}
+
+/// An interface to an SVN repository using a given svnlook command
+#[derive(Debug, Clone)]
+pub struct Repository {
+    svnlook: Svnlook,
     pub path: PathBuf,
 }
 
@@ -74,21 +82,54 @@ impl BufRead for SvnlookCommand {
     }
 }
 
-impl<P: AsRef<Path>> From<P> for Svnlook {
+impl<P: Into<PathBuf>> From<P> for Svnlook {
     fn from(path: P) -> Self {
         Self {
-            path: path.as_ref().to_path_buf(),
+            path: Some(path.into()),
         }
     }
 }
 
 impl Svnlook {
-    pub fn new<R: AsRef<Path>>(path: R) -> Self {
+    fn command(&self) -> Command {
+        Command::new(
+            self.path
+                .as_ref()
+                .map(|path| path.as_path())
+                .unwrap_or(Path::new("svnlook")),
+        )
+    }
+
+    pub fn repository<P: Into<PathBuf>>(&self, path: P) -> Repository {
+        Repository::new_with_svnlook(path, self.clone())
+    }
+}
+
+impl<P: Into<PathBuf>> From<P> for Repository {
+    fn from(path: P) -> Self {
+        Self {
+            svnlook: Svnlook::default(),
+            path: path.into(),
+        }
+    }
+}
+
+impl Repository {
+    pub fn new<R: Into<PathBuf>>(path: R) -> Self {
         Self::from(path)
     }
 
+    pub fn new_with_svnlook<R: Into<PathBuf>>(path: R, svnlook: Svnlook) -> Self {
+        Self {
+            svnlook,
+            path: path.into(),
+        }
+    }
+
     pub fn youngest(&self) -> Result<u64, SvnError> {
-        let n = Command::new("svnlook")
+        let n = self
+            .svnlook
+            .command()
             .arg("youngest")
             .arg("--")
             .arg(&self.path)
@@ -105,7 +146,9 @@ impl Svnlook {
     }
 
     pub fn info(&self, revision: u64) -> Result<SvnInfo, SvnError> {
-        let n = Command::new("svnlook")
+        let n = self
+            .svnlook
+            .command()
             .arg("info")
             .arg("-r")
             .arg(revision.to_string())
@@ -121,7 +164,7 @@ impl Svnlook {
     }
 
     pub fn changed(&self, revision: u64) -> Result<SvnChangedIter, SvnError> {
-        let mut cmd = Command::new("svnlook");
+        let mut cmd = self.svnlook.command();
         cmd.args(&["changed", "--copy-info", "-r"])
             .arg(revision.to_string())
             .arg("--")
@@ -131,9 +174,8 @@ impl Svnlook {
     }
 
     pub fn diff(&self) -> SvnDiffBuilder {
-        let mut cmd = Command::new("svnlook");
-        cmd.arg("diff")
-            .arg(&self.path);
+        let mut cmd = self.svnlook.command();
+        cmd.arg("diff").arg(&self.path);
 
         SvnDiffBuilder::from(cmd)
     }
@@ -143,7 +185,7 @@ impl Svnlook {
         revision: u64,
         filename: R,
     ) -> Result<SvnlookCommand, SvnError> {
-        let mut cmd = Command::new("svnlook");
+        let mut cmd = self.svnlook.command();
         cmd.arg("cat")
             .arg("-r")
             .arg(revision.to_string())
