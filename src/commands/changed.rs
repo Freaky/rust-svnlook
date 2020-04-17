@@ -4,7 +4,6 @@ use std::io::BufRead;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use super::try_chomp;
 use crate::{SvnError, SvnlookCommand};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +40,14 @@ impl fmt::Display for SvnStatus {
                 SvnStatus::PropChange => "PropChange",
             }
         )
+    }
+}
+
+fn try_chomp(slice: &[u8]) -> Result<&[u8], SvnError> {
+    if slice.ends_with(b"\n") {
+        Ok(&slice[..slice.len() - 1])
+    } else {
+        Err(SvnError::ParseError)
     }
 }
 
