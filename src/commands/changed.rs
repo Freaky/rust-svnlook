@@ -1,12 +1,11 @@
-
+use std::convert::{TryFrom, TryInto};
+use std::fmt;
 use std::io::BufRead;
 use std::path::PathBuf;
-use std::convert::{TryFrom, TryInto};
 use std::str::FromStr;
-use std::fmt;
 
-use crate::{SvnlookCommand, SvnError};
 use super::try_chomp;
+use crate::{SvnError, SvnlookCommand};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SvnStatus {
@@ -110,7 +109,6 @@ impl TryFrom<&[u8]> for SvnFrom {
             })
     }
 }
-
 
 #[derive(Debug)]
 pub struct SvnChangedIter {

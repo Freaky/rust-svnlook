@@ -1,7 +1,6 @@
-
 use std::process::Command;
 
-use crate::{SvnlookCommand, SvnError};
+use crate::{SvnError, SvnlookCommand};
 
 impl From<Command> for SvnDiffBuilder {
     fn from(command: Command) -> Self {
@@ -11,7 +10,7 @@ impl From<Command> for SvnDiffBuilder {
 
 #[derive(Debug)]
 pub struct SvnDiffBuilder {
-    command: Command
+    command: Command,
 }
 
 impl SvnDiffBuilder {
@@ -25,12 +24,10 @@ impl SvnDiffBuilder {
         self
     }
 
-
     pub fn diff_copy_from(&mut self) -> &mut Self {
         self.command.arg("--diff-copy-from");
         self
     }
-
 
     pub fn ignore_properties(&mut self) -> &mut Self {
         self.command.arg("--ignore-properties");

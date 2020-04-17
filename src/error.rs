@@ -1,4 +1,4 @@
-use std::{error::Error, io, fmt};
+use std::{error::Error, fmt, io};
 
 #[derive(Debug)]
 pub enum SvnError {

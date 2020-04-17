@@ -1,10 +1,9 @@
-
-pub(crate) mod diff;
 pub(crate) mod changed;
+pub(crate) mod diff;
 pub(crate) mod info;
 
-pub use diff::*;
 pub use changed::*;
+pub use diff::*;
 pub use info::*;
 
 use crate::SvnError;
