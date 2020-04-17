@@ -52,6 +52,13 @@ impl Read for SvnlookCommand {
             .map(|s| s.read(buf))
             .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
     }
+
+    fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut]) -> io::Result<usize> {
+        self.stdout
+            .as_mut()
+            .map(|s| s.read_vectored(bufs))
+            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+    }
 }
 
 impl BufRead for SvnlookCommand {
