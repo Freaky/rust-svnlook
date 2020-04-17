@@ -1,4 +1,4 @@
-use std::{error::Error, io};
+use std::{error::Error, io, fmt};
 
 #[derive(Debug)]
 pub enum SvnError {
@@ -24,5 +24,15 @@ impl From<std::str::Utf8Error> for SvnError {
 impl From<std::num::ParseIntError> for SvnError {
     fn from(_err: std::num::ParseIntError) -> Self {
         SvnError::ParseError
+    }
+}
+
+impl fmt::Display for SvnError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SvnError::CommandError(io) => io.fmt(f),
+            SvnError::ExitFailure(status) => write!(f, "non-zero exit from command: {}", status),
+            SvnError::ParseError => write!(f, "parse error"),
+        }
     }
 }

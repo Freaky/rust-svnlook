@@ -4,47 +4,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
 use std::str;
 
-use chrono::{DateTime, FixedOffset};
-
-mod display;
-mod parse;
 mod error;
+mod commands;
 
 pub use error::*;
-pub use display::*;
+pub use commands::*;
 
 #[derive(Debug, Clone)]
 pub struct Svnlook {
     pub path: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct SvnInfo {
-    pub revision: u64,
-    pub committer: String,
-    pub date: DateTime<FixedOffset>,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SvnStatus {
-    Added,
-    Copied(SvnFrom),
-    Deleted,
-    Updated,
-    PropChange,
-}
-
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct SvnFrom {
-    pub path: PathBuf,
-    pub revision: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct SvnChange {
-    pub path: PathBuf,
-    pub status: SvnStatus,
 }
 
 #[derive(Debug)]
@@ -54,7 +22,7 @@ pub struct SvnlookCommand {
 }
 
 impl SvnlookCommand {
-    fn spawn(mut cmd: Command) -> Result<Self, SvnError> {
+    fn spawn(cmd: &mut Command) -> Result<Self, SvnError> {
         let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
 
         let stdout = child.stdout.take().unwrap();
@@ -152,20 +120,15 @@ impl Svnlook {
             .arg("--")
             .arg(&self.path);
 
-        Ok(SvnChangedIter::from(SvnlookCommand::spawn(cmd)?))
+        Ok(SvnChangedIter::from(SvnlookCommand::spawn(&mut cmd)?))
     }
 
-    pub fn diff(&self, revision: u64) -> Result<SvnlookCommand, SvnError> {
+    pub fn diff(&self) -> SvnDiffBuilder {
         let mut cmd = Command::new("svnlook");
-        cmd.arg("--ignore-properties")
-            .arg("--diff-copy-from")
-            .arg("diff")
-            .arg("-r")
-            .arg(revision.to_string())
-            .arg("--")
+        cmd.arg("diff")
             .arg(&self.path);
 
-        SvnlookCommand::spawn(cmd)
+        SvnDiffBuilder::from(cmd)
     }
 
     pub fn cat<R: AsRef<Path>>(
@@ -181,67 +144,6 @@ impl Svnlook {
             .arg(&self.path)
             .arg(filename.as_ref().as_os_str());
 
-        SvnlookCommand::spawn(cmd)
-    }
-}
-
-pub struct SvnChangedIter {
-    svnlook: SvnlookCommand,
-    line: Vec<u8>,
-    finished: bool,
-}
-
-impl From<SvnlookCommand> for SvnChangedIter {
-    fn from(cmd: SvnlookCommand) -> Self {
-        Self {
-            svnlook: cmd,
-            line: vec![],
-            finished: false,
-        }
-    }
-}
-
-impl Drop for SvnChangedIter {
-    fn drop(&mut self) {
-        let _ = self.svnlook.finish();
-    }
-}
-
-impl SvnChangedIter {
-    fn parse(&mut self) -> Result<SvnChange, SvnError> {
-        let mut change = SvnChange::try_from(&self.line[..])?;
-        self.line.clear();
-
-        if let SvnStatus::Copied(_) = change.status {
-            self.svnlook.read_until(b'\n', &mut self.line)?;
-            change.status = SvnStatus::Copied(SvnFrom::try_from(&self.line[..])?);
-        }
-
-        Ok(change)
-    }
-}
-
-impl Iterator for SvnChangedIter {
-    type Item = Result<SvnChange, SvnError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.line.clear();
-
-        if self.finished {
-            return None;
-        }
-
-        match self.svnlook.read_until(b'\n', &mut self.line) {
-            Ok(0) => {
-                self.finished = true;
-                match self.svnlook.finish() {
-                    Ok(status) if status.success() => None,
-                    Ok(status) => Some(Err(SvnError::ExitFailure(status))),
-                    Err(e) => Some(Err(e)),
-                }
-            }
-            Ok(_) => Some(self.parse()),
-            Err(e) => Some(Err(SvnError::from(e))),
-        }
+        SvnlookCommand::spawn(&mut cmd)
     }
 }
