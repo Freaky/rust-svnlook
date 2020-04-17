@@ -1,50 +1,17 @@
-use chrono::prelude::*;
-use chrono::DateTime;
-
-use std::convert::{TryFrom, TryInto};
-use std::error::Error;
-use std::fmt;
+use std::convert::TryFrom;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
-use std::str::{self, FromStr};
+use std::str;
 
-#[derive(Debug)]
-pub enum SvnError {
-    CommandError(io::Error),
-    ExitFailure(std::process::ExitStatus),
-    ParseError,
-}
+use chrono::{DateTime, FixedOffset};
 
-impl Error for SvnError {}
+mod display;
+mod parse;
+mod error;
 
-impl fmt::Display for SvnError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SvnError::CommandError(io) => io.fmt(f),
-            SvnError::ExitFailure(status) => write!(f, "non-zero exit from command: {}", status),
-            SvnError::ParseError => write!(f, "parse error"),
-        }
-    }
-}
-
-impl From<io::Error> for SvnError {
-    fn from(err: io::Error) -> Self {
-        SvnError::CommandError(err)
-    }
-}
-
-impl From<std::str::Utf8Error> for SvnError {
-    fn from(_err: std::str::Utf8Error) -> Self {
-        SvnError::ParseError
-    }
-}
-
-impl From<std::num::ParseIntError> for SvnError {
-    fn from(_err: std::num::ParseIntError) -> Self {
-        SvnError::ParseError
-    }
-}
+pub use error::*;
+pub use display::*;
 
 #[derive(Debug, Clone)]
 pub struct Svnlook {
@@ -66,42 +33,6 @@ pub enum SvnStatus {
     Deleted,
     Updated,
     PropChange,
-}
-
-impl TryFrom<&[u8]> for SvnStatus {
-    type Error = SvnError;
-
-    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
-        if s.len() < 3 {
-            return Err(SvnError::ParseError);
-        }
-
-        Ok(match &s[0..3] {
-            b"A  " => SvnStatus::Added,
-            b"A +" => SvnStatus::Copied(SvnFrom::default()),
-            b"D  " => SvnStatus::Deleted,
-            b"U  " => SvnStatus::Updated,
-            b"_U " => SvnStatus::PropChange,
-            b"UU " => SvnStatus::Updated,
-            _ => return Err(SvnError::ParseError),
-        })
-    }
-}
-
-impl fmt::Display for SvnStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                SvnStatus::Added => "Added",
-                SvnStatus::Copied(_) => "Copied",
-                SvnStatus::Deleted => "Deleted",
-                SvnStatus::Updated => "Updated",
-                SvnStatus::PropChange => "PropChange",
-            }
-        )
-    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -211,38 +142,7 @@ impl Svnlook {
             return Err(SvnError::ExitFailure(n.status));
         }
 
-        let mut lines = n.stdout.splitn(4, |b| *b == b'\n');
-
-        let committer = lines
-            .next()
-            .map(String::from_utf8_lossy)
-            .ok_or(SvnError::ParseError)?;
-
-        let date = lines
-            .next()
-            .filter(|d| d.len() > 25)
-            .and_then(|d| str::from_utf8(&d[0..25]).ok())
-            .and_then(|d| DateTime::parse_from_str(d, "%Y-%m-%d %H:%M:%S %z").ok())
-            .ok_or(SvnError::ParseError)?;
-
-        let bytes = lines
-            .next()
-            .and_then(|d| str::from_utf8(d).ok())
-            .and_then(|d| usize::from_str(d).ok())
-            .ok_or(SvnError::ParseError)?;
-
-        lines
-            .next()
-            .filter(|m| m.len() > bytes)
-            .map(|m| &m[0..bytes])
-            .map(String::from_utf8_lossy)
-            .map(|msg| SvnInfo {
-                revision,
-                committer: committer.to_string(),
-                date,
-                message: msg.to_string(),
-            })
-            .ok_or(SvnError::ParseError)
+        SvnInfo::try_from((revision, &n.stdout[..]))
     }
 
     pub fn changed(&self, revision: u64) -> Result<SvnChangedIter, SvnError> {
@@ -307,52 +207,14 @@ impl Drop for SvnChangedIter {
     }
 }
 
-fn chomp(slice: &[u8]) -> &[u8] {
-    if slice.ends_with(b"\n") {
-        &slice[..slice.len() - 1]
-    } else {
-        slice
-    }
-}
-
 impl SvnChangedIter {
     fn parse(&mut self) -> Result<SvnChange, SvnError> {
-        if self.line.len() < 4 {
-            return Err(SvnError::ParseError);
-        }
-
-        let (change, path) = self.line.split_at(4);
-        let mut change = SvnChange {
-            path: PathBuf::from(String::from_utf8_lossy(chomp(path)).to_string()),
-            status: change.try_into()?,
-        };
+        let mut change = SvnChange::try_from(&self.line[..])?;
         self.line.clear();
 
         if let SvnStatus::Copied(_) = change.status {
             self.svnlook.read_until(b'\n', &mut self.line)?;
-            let line = chomp(&self.line);
-
-            if !line.starts_with(b"    (from ") || !line.ends_with(b")") {
-                return Err(SvnError::ParseError);
-            }
-
-            let line: &[u8] = &line[10..line.len() - 1];
-            let from = line
-                .iter()
-                .rposition(|&b| b == b':')
-                .map(|pos| line.split_at(pos))
-                .filter(|(_, revision)| revision.len() > 2)
-                .ok_or(SvnError::ParseError)
-                .and_then(|(path, revision)| {
-                    str::from_utf8(&revision[2..])
-                        .map_err(SvnError::from)
-                        .and_then(|s| u64::from_str(s).map_err(SvnError::from))
-                        .map(|revision| SvnFrom {
-                            path: PathBuf::from(String::from_utf8_lossy(path).to_string()),
-                            revision,
-                        })
-                })?;
-            change.status = SvnStatus::Copied(from);
+            change.status = SvnStatus::Copied(SvnFrom::try_from(&self.line[..])?);
         }
 
         Ok(change)
