@@ -1,14 +1,17 @@
 use std::convert::TryFrom;
 use std::io::{self, BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::str;
 
 mod commands;
+mod child_reader;
 mod error;
 
 pub use commands::*;
 pub use error::*;
+
+use child_reader::ChildReader;
 
 /// A struct representing the path to an svnlook binary
 #[derive(Default, Debug, Clone)]
@@ -25,80 +28,40 @@ pub struct Repository {
 
 #[derive(Debug)]
 pub struct SvnlookCommand {
-    child: Child,
-    stdout: Option<BufReader<ChildStdout>>,
+    child: BufReader<ChildReader>,
 }
 
 impl SvnlookCommand {
     fn spawn(cmd: &mut Command) -> Result<Self, SvnError> {
-        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn()?;
+        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn()?;
 
-        let stdout = child.stdout.take().unwrap();
         Ok(Self {
-            child,
-            stdout: Some(BufReader::new(stdout)),
+            child: BufReader::new(ChildReader::from(child)),
         })
     }
 
-    fn handle_io<F: FnOnce(&mut BufReader<ChildStdout>) -> io::Result<usize>>(
-        &mut self,
-        handler: F,
-    ) -> io::Result<usize> {
-        let res = self
-            .stdout
-            .as_mut()
-            .map(handler)
-            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")));
-
-        if let Ok(0) = res {
-            match self.finish() {
-                Ok(status) if !status.success() => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "svnlook exited nonzero",
-                    ))
-                }
-                Err(SvnError::CommandError(e)) => return Err(e),
-                _ => (),
-            }
-        }
-
-        res
-    }
-
     pub fn finish(&mut self) -> Result<ExitStatus, SvnError> {
-        self.stdout = None;
-
-        Ok(self.child.wait()?)
-    }
-}
-
-impl Drop for SvnlookCommand {
-    fn drop(&mut self) {
-        let _ = self.finish();
+        Ok(self.child.get_mut().finish()?)
     }
 }
 
 impl Read for SvnlookCommand {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.handle_io(|r| r.read(buf))
+        self.child.read(buf)
     }
 
     fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut]) -> io::Result<usize> {
-        self.handle_io(|r| r.read_vectored(bufs))
+        self.child.read_vectored(bufs)
     }
 }
 
 impl BufRead for SvnlookCommand {
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
-        self.stdout
-            .as_mut()
-            .map(|s| s.fill_buf())
-            .unwrap_or(Err(io::Error::new(io::ErrorKind::Other, "closed")))
+        self.child.fill_buf()
     }
 
     fn consume(&mut self, amt: usize) {
-        self.stdout.as_mut().map(|s| s.consume(amt));
+        self.child.consume(amt);
     }
 }
 
