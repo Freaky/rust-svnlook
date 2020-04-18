@@ -33,7 +33,7 @@ pub struct SvnlookCommand {
 
 impl SvnlookCommand {
     fn spawn(cmd: &mut Command) -> Result<Self, SvnError> {
-        let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn()?;
+        let child = cmd.stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn()?;
 
         Ok(Self {
             child: BufReader::new(ChildReader::from(child)),
