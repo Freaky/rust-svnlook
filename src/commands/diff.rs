@@ -1,19 +1,24 @@
 use std::process::Command;
+use std::path::PathBuf;
 
 use crate::{SvnError, SvnlookCommand};
 
-impl From<Command> for SvnDiffBuilder {
-    fn from(command: Command) -> Self {
-        Self { command }
-    }
-}
-
 #[derive(Debug)]
 pub struct SvnDiffBuilder {
+    repository: PathBuf,
     command: Command,
 }
 
 impl SvnDiffBuilder {
+    pub(crate) fn new(repository: &PathBuf, mut command: Command) -> Self {
+        command.arg("diff");
+
+        Self {
+            repository: repository.clone(),
+            command
+        }
+    }
+
     pub fn no_diff_deleted(&mut self) -> &mut Self {
         self.command.arg("--no-diff-deleted");
         self
@@ -76,6 +81,8 @@ impl SvnDiffBuilder {
     }
 
     pub fn spawn(&mut self) -> Result<SvnlookCommand, SvnError> {
+        self.command.arg("--");
+        self.command.arg(&self.repository);
         SvnlookCommand::spawn(&mut self.command)
     }
 }

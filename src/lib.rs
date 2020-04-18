@@ -157,10 +157,7 @@ impl Repository {
     }
 
     pub fn diff(&self) -> SvnDiffBuilder {
-        let mut cmd = self.svnlook.command();
-        cmd.arg("diff").arg(&self.path);
-
-        SvnDiffBuilder::from(cmd)
+        SvnDiffBuilder::new(&self.path, self.svnlook.command())
     }
 
     pub fn cat<R: AsRef<Path>>(
